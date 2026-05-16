@@ -128,20 +128,39 @@ print("libass subtitles filter : confirmed.")
 
 import os as _os
 
-# Build a subprocess environment with all known Colab CUDA library paths prepended.
+# Build a subprocess environment with CUDA library paths.
+# Strategy: query ldconfig first (reflects the actual runtime linker cache),
+# then fall back to known Colab path patterns for any that ldconfig missed.
 _CUDA_ENV = _os.environ.copy()
-_cuda_lib_candidates = [
+
+_ldconf = subprocess.run(["ldconfig", "-p"], capture_output=True, text=True)
+_cuda_dirs = set()
+for _ldline in _ldconf.stdout.splitlines():
+    # Match lines for the three libraries NVENC depends on
+    if any(kw in _ldline for kw in ("libcuda", "libnvcuvid", "libnvidia-encode")):
+        if "=>" in _ldline:
+            _lib_path = _ldline.split("=>")[-1].strip()
+            _lib_dir  = _os.path.dirname(_lib_path)
+            if _lib_dir and _os.path.isdir(_lib_dir):
+                _cuda_dirs.add(_lib_dir)
+
+# Add known Colab CUDA paths as additional fallback
+for _p in [
     "/usr/local/cuda/lib64",
     "/usr/local/cuda-12/lib64",
     "/usr/local/cuda-12.0/lib64",
     "/usr/local/cuda-11.8/lib64",
     "/usr/lib/x86_64-linux-gnu",
-]
-_cuda_extra = ":".join(p for p in _cuda_lib_candidates if _os.path.isdir(p))
+]:
+    if _os.path.isdir(_p):
+        _cuda_dirs.add(_p)
+
+_cuda_extra = ":".join(sorted(_cuda_dirs))
 if _cuda_extra:
     _CUDA_ENV["LD_LIBRARY_PATH"] = (
         _cuda_extra + ":" + _CUDA_ENV.get("LD_LIBRARY_PATH", "")
     )
+    print(f"CUDA lib paths   : {_cuda_extra}")
 
 # NVENC RC modes tried in priority order.
 # Each entry: (label, quality_flag, quality_flag_name, extra_rc_args)
@@ -221,15 +240,31 @@ def _detect_hw_encoder() -> dict:
                 f"[{info['gpu_name']}, {info['gpu_mem_mb']} MB VRAM]"
             )
             return info
-        # Capture the last meaningful ffmpeg error line for diagnostics
-        _stderr_lines = [l for l in _test.stderr.splitlines() if l.strip()]
-        _last_err = _stderr_lines[-1] if _stderr_lines else "(no output)"
+        # Extract the actual diagnostic lines — NVENC / CUDA errors appear
+        # in the middle of stderr; "Conversion failed!" is always the last
+        # line and carries no useful information.
+        _diagnostic_keywords = (
+            "h264_nvenc", "nvenc", "cuda", "nvcuvid", "libnvcuvid",
+            "driver", "device", "encode", "session", "version",
+            "failed", "error", "cannot", "unable", "no capable",
+        )
+        _relevant = [
+            l.strip() for l in _test.stderr.splitlines()
+            if l.strip()
+            and "Conversion failed" not in l
+            and any(kw in l.lower() for kw in _diagnostic_keywords)
+        ]
+        _last_err = (
+            "\n             ".join(_relevant[-6:])
+            if _relevant
+            else (_test.stderr.strip() or "(no stderr output)")
+        )
 
-    # All three RC modes failed — report actual ffmpeg error, stay on CPU
+    # All three RC modes failed — surface the actual ffmpeg error
     info['reason'] = (
         f"CPU — libx264  [{info['gpu_name']} found, h264_nvenc present, "
         f"but all NVENC RC modes failed]\n"
-        f"          Last ffmpeg error: {_last_err}"
+        f"          NVENC error: {_last_err}"
     )
     return info
 
