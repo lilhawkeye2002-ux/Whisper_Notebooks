@@ -115,21 +115,55 @@ print("libass subtitles filter : confirmed.")
 # The subtitle (libass) filter is CPU-only regardless of GPU availability;
 # only the final H.264 encoding step is hardware-accelerated.
 #
-# Three checks before committing to NVENC:
-#   a) nvidia-smi confirms an NVIDIA GPU is present
-#   b) ffmpeg -encoders confirms h264_nvenc is compiled into this ffmpeg build
-#   c) A 1-second 64x64 test encode confirms the NVENC driver is functional
-#      (guards against driver/NVENC-SDK version mismatches)
+# Why three test modes instead of one:
+#   ffmpeg 4.4.2 (Ubuntu 22.04 — the version Colab ships) requires an explicit
+#   -rc (rate-control) mode before -cq is accepted by h264_nvenc. Without -rc,
+#   the encoder defaults to CBR and rejects the quality arg. Three modes are
+#   tried in order; the first that succeeds is stored for the actual encode.
 #
-# If NVENC passes all three checks but fails during the real encode, the error
-# handler in Phase 11 automatically rebuilds and retries with libx264.
+#   Additionally, CUDA runtime libraries (libcuda.so, libnvcuvid.so) live in
+#   /usr/local/cuda/lib64 and are NOT automatically on LD_LIBRARY_PATH for
+#   subprocesses on Colab. Without explicit path injection, every ffmpeg NVENC
+#   call silently fails with "No capable devices found" or "Cannot load nvcuda".
+
+import os as _os
+
+# Build a subprocess environment with all known Colab CUDA library paths prepended.
+_CUDA_ENV = _os.environ.copy()
+_cuda_lib_candidates = [
+    "/usr/local/cuda/lib64",
+    "/usr/local/cuda-12/lib64",
+    "/usr/local/cuda-12.0/lib64",
+    "/usr/local/cuda-11.8/lib64",
+    "/usr/lib/x86_64-linux-gnu",
+]
+_cuda_extra = ":".join(p for p in _cuda_lib_candidates if _os.path.isdir(p))
+if _cuda_extra:
+    _CUDA_ENV["LD_LIBRARY_PATH"] = (
+        _cuda_extra + ":" + _CUDA_ENV.get("LD_LIBRARY_PATH", "")
+    )
+
+# NVENC RC modes tried in priority order.
+# Each entry: (label, quality_flag, quality_flag_name, extra_rc_args)
+#   vbr      — variable bitrate quality mode, modern default
+#   vbr_hq   — high-quality VBR, highest quality but may not exist on older SDK
+#   constqp  — constant QP, most compatible, widest driver support
+_NVENC_RC_MODES = [
+    ("vbr",     ["-rc", "vbr",     "-cq",  None, "-b:v", "0"]),
+    ("vbr_hq",  ["-rc", "vbr_hq", "-cq",  None, "-b:v", "0"]),
+    ("constqp", ["-rc", "constqp", "-qp",  None            ]),
+]
+# None placeholders above are filled with the actual quality value at encode time.
+
 
 def _detect_hw_encoder() -> dict:
     info = {
-        'encoder':    'libx264',
-        'gpu_name':   None,
-        'gpu_mem_mb': None,
-        'reason':     'CPU — libx264 (no NVIDIA GPU detected)',
+        'encoder':        'libx264',
+        'nvenc_rc_mode':  None,    # which RC mode succeeded (vbr/vbr_hq/constqp)
+        'nvenc_rc_args':  None,    # pre-built quality args for that mode
+        'gpu_name':       None,
+        'gpu_mem_mb':     None,
+        'reason':         'CPU — libx264 (no NVIDIA GPU detected)',
     }
 
     # (a) NVIDIA GPU presence
@@ -146,7 +180,7 @@ def _detect_hw_encoder() -> dict:
     info['gpu_name']   = _parts[0]
     info['gpu_mem_mb'] = _parts[1] if len(_parts) > 1 else "unknown"
 
-    # (b) h264_nvenc compiled into ffmpeg
+    # (b) h264_nvenc compiled into this ffmpeg build
     _enc_list = subprocess.run(
         ["ffmpeg", "-encoders"], capture_output=True, text=True
     )
@@ -157,47 +191,51 @@ def _detect_hw_encoder() -> dict:
         )
         return info
 
-    # (c) NVENC driver functional — 1-second 64x64 black-frame test encode
-    _test = subprocess.run(
-        [
+    # (c) Try each NVENC RC mode with a 1-second 64×64 test encode.
+    #     Use the CUDA-aware environment for every subprocess call.
+    _last_err = ""
+    for _rc_label, _rc_args_template in _NVENC_RC_MODES:
+        # Fill the None quality placeholder with value 23 for the test
+        _rc_test_args = [
+            "23" if a is None else a for a in _rc_args_template
+        ]
+        _test_cmd = [
             "ffmpeg", "-y",
             "-f", "lavfi", "-i", "color=black:s=64x64:d=1:r=1",
             "-c:v", "h264_nvenc", "-preset", "fast",
-            "-b:v", "0", "-cq", "23",
+            *_rc_test_args,
             "-f", "null", "-",
-        ],
-        capture_output=True, text=True,
-    )
-    if _test.returncode != 0:
-        info['reason'] = (
-            f"CPU — libx264  [{info['gpu_name']} found, h264_nvenc listed, "
-            f"but NVENC init failed (driver/SDK mismatch)]"
+        ]
+        _test = subprocess.run(
+            _test_cmd,
+            capture_output=True, text=True,
+            env=_CUDA_ENV,
         )
-        return info
+        if _test.returncode == 0:
+            # This RC mode works — store it for use in the actual encode
+            info['encoder']       = 'h264_nvenc'
+            info['nvenc_rc_mode'] = _rc_label
+            info['nvenc_rc_args'] = _rc_args_template   # None slots filled later
+            info['reason'] = (
+                f"GPU — h264_nvenc/{_rc_label}  "
+                f"[{info['gpu_name']}, {info['gpu_mem_mb']} MB VRAM]"
+            )
+            return info
+        # Capture the last meaningful ffmpeg error line for diagnostics
+        _stderr_lines = [l for l in _test.stderr.splitlines() if l.strip()]
+        _last_err = _stderr_lines[-1] if _stderr_lines else "(no output)"
 
-    info['encoder'] = 'h264_nvenc'
-    info['reason']  = (
-        f"GPU — h264_nvenc  "
-        f"[{info['gpu_name']}, {info['gpu_mem_mb']} MB VRAM]"
+    # All three RC modes failed — report actual ffmpeg error, stay on CPU
+    info['reason'] = (
+        f"CPU — libx264  [{info['gpu_name']} found, h264_nvenc present, "
+        f"but all NVENC RC modes failed]\n"
+        f"          Last ffmpeg error: {_last_err}"
     )
     return info
 
 
 _hw = _detect_hw_encoder()
 print(f"Hardware encoder : {_hw['reason']}")
-
-# Pre-build both encoder arg sets so the auto-retry in Phase 11 can swap
-# from GPU to CPU without rebuilding the entire command from scratch.
-_GPU_ENCODER_ARGS = [
-    "-c:v", "h264_nvenc",
-    "-b:v", "0", "-cq", None,       # -cq value filled in Phase 11
-    "-preset", None,                # preset filled in Phase 11
-]
-_CPU_ENCODER_ARGS = [
-    "-c:v", "libx264",
-    "-crf", None,                   # -crf value filled in Phase 11
-    "-preset", None,                # preset filled in Phase 11
-]
 
 # ── Phase 5: Font Installation + Name Verification ───────────────────────────
 # DejaVu Sans     — Latin/Greek/Cyrillic, guaranteed on Ubuntu
@@ -505,10 +543,16 @@ _vf = f"{_scale_filter},format=yuv420p,{_subtitle_filter}"
 def _build_cmd(encoder: str) -> list:
     """Return the complete ffmpeg command for the given encoder ('h264_nvenc' or 'libx264')."""
     if encoder == 'h264_nvenc':
+        # Fill the None placeholder in the stored RC args with the actual CRF value.
+        # The None slot is the quality argument (-cq or -qp depending on RC mode).
+        _rc_args = [
+            str(video_crf) if a is None else a
+            for a in _hw['nvenc_rc_args']
+        ]
         _enc_args = [
             "-c:v", "h264_nvenc",
-            "-b:v", "0", "-cq", str(video_crf),   # quality-based VBR mode
-            "-preset", video_quality,              # fast/medium/slow map directly
+            *_rc_args,
+            "-preset", video_quality,   # fast/medium/slow map directly to nvenc presets
         ]
     else:
         _enc_args = [
@@ -546,12 +590,13 @@ def _build_cmd(encoder: str) -> list:
 
 
 def _run_ffmpeg(cmd: list) -> tuple:
-    """Run ffmpeg, stream progress, return (returncode, last_lines)."""
+    """Run ffmpeg with CUDA-aware environment, stream progress, return (returncode, last_lines)."""
     proc = subprocess.Popen(
         cmd,
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
         universal_newlines=True,
+        env=_CUDA_ENV,    # ensures libcuda.so / libnvcuvid.so are discoverable
     )
     last_lines = []
     for line in proc.stdout:
