@@ -105,6 +105,100 @@ _ver_line = subprocess.run(
 print(f"ffmpeg : {_ver_line}")
 print("libass subtitles filter : confirmed.")
 
+# ── Phase 4b: Hardware Acceleration Detection ─────────────────────────────────
+# Probes available Colab hardware and selects the best ffmpeg video encoder.
+#
+# Priority order:
+#   1. h264_nvenc (NVIDIA GPU)  — T4 / A100 / V100 / L4 on Colab free & Pro
+#   2. libx264   (CPU fallback) — always available, used when no GPU is present
+#
+# The subtitle (libass) filter is CPU-only regardless of GPU availability;
+# only the final H.264 encoding step is hardware-accelerated.
+#
+# Three checks before committing to NVENC:
+#   a) nvidia-smi confirms an NVIDIA GPU is present
+#   b) ffmpeg -encoders confirms h264_nvenc is compiled into this ffmpeg build
+#   c) A 1-second 64x64 test encode confirms the NVENC driver is functional
+#      (guards against driver/NVENC-SDK version mismatches)
+#
+# If NVENC passes all three checks but fails during the real encode, the error
+# handler in Phase 11 automatically rebuilds and retries with libx264.
+
+def _detect_hw_encoder() -> dict:
+    info = {
+        'encoder':    'libx264',
+        'gpu_name':   None,
+        'gpu_mem_mb': None,
+        'reason':     'CPU — libx264 (no NVIDIA GPU detected)',
+    }
+
+    # (a) NVIDIA GPU presence
+    _smi = subprocess.run(
+        ["nvidia-smi",
+         "--query-gpu=name,memory.total",
+         "--format=csv,noheader,nounits"],
+        capture_output=True, text=True,
+    )
+    if _smi.returncode != 0 or not _smi.stdout.strip():
+        return info
+
+    _parts = [p.strip() for p in _smi.stdout.strip().split(",")]
+    info['gpu_name']   = _parts[0]
+    info['gpu_mem_mb'] = _parts[1] if len(_parts) > 1 else "unknown"
+
+    # (b) h264_nvenc compiled into ffmpeg
+    _enc_list = subprocess.run(
+        ["ffmpeg", "-encoders"], capture_output=True, text=True
+    )
+    if "h264_nvenc" not in (_enc_list.stdout + _enc_list.stderr):
+        info['reason'] = (
+            f"CPU — libx264  [{info['gpu_name']} found but "
+            f"ffmpeg has no h264_nvenc — try: !apt install -y ffmpeg]"
+        )
+        return info
+
+    # (c) NVENC driver functional — 1-second 64x64 black-frame test encode
+    _test = subprocess.run(
+        [
+            "ffmpeg", "-y",
+            "-f", "lavfi", "-i", "color=black:s=64x64:d=1:r=1",
+            "-c:v", "h264_nvenc", "-preset", "fast",
+            "-b:v", "0", "-cq", "23",
+            "-f", "null", "-",
+        ],
+        capture_output=True, text=True,
+    )
+    if _test.returncode != 0:
+        info['reason'] = (
+            f"CPU — libx264  [{info['gpu_name']} found, h264_nvenc listed, "
+            f"but NVENC init failed (driver/SDK mismatch)]"
+        )
+        return info
+
+    info['encoder'] = 'h264_nvenc'
+    info['reason']  = (
+        f"GPU — h264_nvenc  "
+        f"[{info['gpu_name']}, {info['gpu_mem_mb']} MB VRAM]"
+    )
+    return info
+
+
+_hw = _detect_hw_encoder()
+print(f"Hardware encoder : {_hw['reason']}")
+
+# Pre-build both encoder arg sets so the auto-retry in Phase 11 can swap
+# from GPU to CPU without rebuilding the entire command from scratch.
+_GPU_ENCODER_ARGS = [
+    "-c:v", "h264_nvenc",
+    "-b:v", "0", "-cq", None,       # -cq value filled in Phase 11
+    "-preset", None,                # preset filled in Phase 11
+]
+_CPU_ENCODER_ARGS = [
+    "-c:v", "libx264",
+    "-crf", None,                   # -crf value filled in Phase 11
+    "-preset", None,                # preset filled in Phase 11
+]
+
 # ── Phase 5: Font Installation + Name Verification ───────────────────────────
 # DejaVu Sans     — Latin/Greek/Cyrillic, guaranteed on Ubuntu
 # Noto Sans CJK JP — Japanese/Chinese/Korean (auto-selected when SRT contains CJK)
@@ -407,62 +501,101 @@ else:
 
 _vf = f"{_scale_filter},format=yuv420p,{_subtitle_filter}"
 
-cmd = [
-    "ffmpeg", "-y",
-    # Image input at 1 fps — H.264 encodes repeated identical frames as
-    # near-zero-size P-frames, making long static-image videos encode fast.
-    "-framerate", "1", "-loop", "1", "-i", TMP_COVER,
-    # Audio input — path may contain any Unicode/special chars; safe in list mode.
-    "-i", audio_path,
-    # Video filter chain: scale → even-dims → yuv420p → burned subtitles
-    "-vf", _vf,
-    # Audio filters:
-    #   asetpts=PTS-STARTPTS  normalises M4A/AAC ELST edit-list offset to t=0,
-    #                         keeping subtitle timings aligned with speech.
-    #   apad                  pads with silence if audio ends before -t duration.
-    "-af", "asetpts=PTS-STARTPTS,apad",
-    # Output at standard 25 fps (interpolated from 1 fps input)
-    "-r", "25",
-    "-c:v", "libx264", "-crf", str(video_crf), "-preset", video_quality,
-    # Explicit stereo AAC — avoids channel-layout warnings on some M4A inputs
-    "-c:a", "aac", "-b:a", "192k", "-ac", "2",
-    # Required for Apple / QuickTime / browser compatibility
-    "-pix_fmt", "yuv420p",
-    # Hard output duration: prevents infinite loop from -loop 1
-    "-t", str(video_duration),
-    # Move moov atom to front of file (enables progressive streaming)
-    "-movflags", "+faststart",
-    OUTPUT_PATH,
-]
+
+def _build_cmd(encoder: str) -> list:
+    """Return the complete ffmpeg command for the given encoder ('h264_nvenc' or 'libx264')."""
+    if encoder == 'h264_nvenc':
+        _enc_args = [
+            "-c:v", "h264_nvenc",
+            "-b:v", "0", "-cq", str(video_crf),   # quality-based VBR mode
+            "-preset", video_quality,              # fast/medium/slow map directly
+        ]
+    else:
+        _enc_args = [
+            "-c:v", "libx264",
+            "-crf", str(video_crf),
+            "-preset", video_quality,
+        ]
+    return [
+        "ffmpeg", "-y",
+        # Image input at 1 fps — H.264 encodes repeated identical frames as
+        # near-zero-size P-frames, making long static-image videos encode fast.
+        "-framerate", "1", "-loop", "1", "-i", TMP_COVER,
+        # Audio input — path may contain any Unicode/special chars; safe in list mode.
+        "-i", audio_path,
+        # Video filter chain: scale → even-dims → yuv420p → burned subtitles
+        "-vf", _vf,
+        # Audio filters:
+        #   asetpts=PTS-STARTPTS  normalises M4A/AAC ELST edit-list offset to t=0,
+        #                         keeping subtitle timings aligned with speech.
+        #   apad                  pads with silence if audio ends before -t duration.
+        "-af", "asetpts=PTS-STARTPTS,apad",
+        # Output at standard 25 fps (interpolated from 1 fps input)
+        "-r", "25",
+        *_enc_args,
+        # Explicit stereo AAC — avoids channel-layout warnings on some M4A inputs
+        "-c:a", "aac", "-b:a", "192k", "-ac", "2",
+        # Required for Apple / QuickTime / browser compatibility
+        "-pix_fmt", "yuv420p",
+        # Hard output duration: prevents infinite loop from -loop 1
+        "-t", str(video_duration),
+        # Move moov atom to front of file (enables progressive streaming)
+        "-movflags", "+faststart",
+        OUTPUT_PATH,
+    ]
+
+
+def _run_ffmpeg(cmd: list) -> tuple:
+    """Run ffmpeg, stream progress, return (returncode, last_lines)."""
+    proc = subprocess.Popen(
+        cmd,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        universal_newlines=True,
+    )
+    last_lines = []
+    for line in proc.stdout:
+        line = line.rstrip()
+        if line.startswith("frame=") or line.startswith("size="):
+            print(f"\r{line}", end="", flush=True)
+        elif line:
+            last_lines.append(line)
+            if len(last_lines) > 30:
+                last_lines.pop(0)
+    proc.wait()
+    print()
+    return proc.returncode, last_lines
+
 
 _mm = int(video_duration // 60)
 _ss = int(video_duration % 60)
+_enc_label = "NVENC CQ" if _hw['encoder'] == 'h264_nvenc' else "x264 CRF"
 print(
     f"\nRendering {_mm:02d}:{_ss:02d} at {_out_w}x{_out_h} | "
-    f"CRF {video_crf} | preset={video_quality} | font={_font_name}\n"
+    f"{_enc_label} {video_crf} | preset={video_quality} | "
+    f"encoder={_hw['encoder']} | font={_font_name}\n"
 )
 
-_proc = subprocess.Popen(
-    cmd,
-    stdout=subprocess.PIPE,
-    stderr=subprocess.STDOUT,
-    universal_newlines=True,
-)
-_last_lines = []
-for _line in _proc.stdout:
-    _line = _line.rstrip()
-    if _line.startswith("frame=") or _line.startswith("size="):
-        print(f"\r{_line}", end="", flush=True)
-    elif _line:
-        _last_lines.append(_line)
-        if len(_last_lines) > 30:
-            _last_lines.pop(0)
-_proc.wait()
-print()
+_active_encoder = _hw['encoder']
+_returncode, _last_lines = _run_ffmpeg(_build_cmd(_active_encoder))
 
-if _proc.returncode != 0:
+# ── Seamless NVENC → CPU fallback ────────────────────────────────────────────
+# If NVENC failed during the real encode (rare: test passed but driver stalled),
+# automatically rebuild and retry the full command with libx264 on CPU.
+_nvenc_fail_markers = (
+    "nvenc", "No capable devices", "Cannot load", "CUDA_ERROR",
+    "nvcuvid", "Encoder not found",
+)
+if _returncode != 0 and _active_encoder == 'h264_nvenc':
+    _tail_lower = "\n".join(_last_lines).lower()
+    if any(m.lower() in _tail_lower for m in _nvenc_fail_markers):
+        print("[WARN] NVENC encoder failed — seamlessly retrying with CPU libx264...")
+        _active_encoder = 'libx264'
+        _returncode, _last_lines = _run_ffmpeg(_build_cmd('libx264'))
+
+if _returncode != 0:
     _tail = "\n".join(_last_lines)
-    print(f"[ERROR] ffmpeg exited with code {_proc.returncode}")
+    print(f"[ERROR] ffmpeg exited with code {_returncode}")
     print(f"Last output:\n{_tail}")
     if "Invalid option" in _tail or "Unknown encoder" in _tail:
         print("\nHint: encoder unavailable — run:  !apt install -y ffmpeg")
