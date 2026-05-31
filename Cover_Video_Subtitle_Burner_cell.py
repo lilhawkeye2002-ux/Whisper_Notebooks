@@ -16,7 +16,7 @@ IMAGE_EXTS = {'.png', '.jpg', '.jpeg', '.webp'}
 AUDIO_EXTS = {'.mp3', '.wav', '.m4a', '.aac', '.flac', '.ogg', '.opus', '.wma'}
 SRT_EXTS   = {'.srt'}
 
-# ── Phase 1: Directory Check + File Detection (fail fast) ─────────────────────
+# ── Phase 1: Directory Check + File Detection ───────────────────────────────
 # Runs instantly with no external dependencies.
 # Exits immediately if files are missing or ambiguous (multiple of same type).
 
@@ -439,6 +439,11 @@ elif img.mode != "RGB":
 w, h = img.size
 w = w if w % 2 == 0 else w - 1
 h = h if h % 2 == 0 else h - 1
+if w < 2 or h < 2:
+    sys.exit(
+        f"[ERROR] Cover image too small after even-dimension enforcement: {w}x{h}. "
+        f"Minimum supported size is 2x2 pixels."
+    )
 if (w, h) != img.size:
     img = img.crop((0, 0, w, h))
 
@@ -520,6 +525,7 @@ def _has_cjk(text: str) -> bool:
         cp = ord(ch)
         if (0x3000 <= cp <= 0x9FFF
                 or 0xF900 <= cp <= 0xFAFF
+                or 0xFF00 <= cp <= 0xFFEF    # halfwidth/fullwidth forms incl. half-width katakana
                 or 0x20000 <= cp <= 0x2FA1F):
             return True
     return False
@@ -708,7 +714,10 @@ _verify = subprocess.run(
 )
 
 print(f"\n✓  {OUTPUT_PATH}  ({_size_mb:.2f} MB)")
-print(_verify.stdout.strip())
+if _verify.returncode != 0 or not _verify.stdout.strip():
+    print("[WARN] ffprobe could not verify output streams — file may be corrupt.")
+else:
+    print(_verify.stdout.strip())
 print()
 print("Download: right-click the file in the Files panel (📁 left sidebar) → Download")
 print("⚠️  Download before closing the session — /content/ is erased on disconnect.")

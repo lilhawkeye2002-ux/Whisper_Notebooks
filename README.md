@@ -4,7 +4,7 @@
 
 ### Transcribe any audio or video file — for free — using Google Colab and OpenAI Whisper
 
-[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/lilhawkeye2002-ux/notebooks/blob/main/Whisper_Bulk_Transcriber.ipynb)
+[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/lilhawkeye2002-ux/Whisper_Notebooks/blob/main/Whisper_Bulk_Transcriber.ipynb)
 &nbsp;
 ![Python](https://img.shields.io/badge/Python-3.10%2B-blue?logo=python&logoColor=white)
 &nbsp;
@@ -65,7 +65,7 @@ You need a free Google account. That's it.
 
 Click the button below to open the notebook:
 
-[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/lilhawkeye2002-ux/notebooks/blob/main/Whisper_Bulk_Transcriber.ipynb)
+[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/lilhawkeye2002-ux/Whisper_Notebooks/blob/main/Whisper_Bulk_Transcriber.ipynb)
 
 ---
 
