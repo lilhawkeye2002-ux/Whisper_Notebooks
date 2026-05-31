@@ -1,95 +1,166 @@
 <div align="center">
 
-# 🎙️ Whisper Bulk Transcriber
+# 🎙️ Whisper Notebooks
 
-### Transcribe any audio or video file — for free — using Google Colab and OpenAI Whisper
+### Free AI tools for audio transcription and subtitle video creation — running on Google Colab
 
-[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/lilhawkeye2002-ux/notebooks/blob/main/Whisper_Bulk_Transcriber.ipynb)
-&nbsp;
-![Python](https://img.shields.io/badge/Python-3.10%2B-blue?logo=python&logoColor=white)
-&nbsp;
-![Whisper](https://img.shields.io/badge/Whisper-large--v2-orange?logo=openai&logoColor=white)
-&nbsp;
-![Colab](https://img.shields.io/badge/Google%20Colab-Free%20GPU-yellow?logo=googlecolab&logoColor=white)
+[![Python](https://img.shields.io/badge/Python-3.10%2B-blue?logo=python&logoColor=white)](https://python.org)
+[![Whisper](https://img.shields.io/badge/Whisper-large--v2-orange?logo=openai&logoColor=white)](https://github.com/openai/whisper)
+[![Google Colab](https://img.shields.io/badge/Google%20Colab-Free%20GPU-yellow?logo=googlecolab&logoColor=white)](https://colab.research.google.com)
 
 </div>
 
 ---
 
-Drop your audio or video files into a folder and get back clean **`.txt`**, **`.srt`**, and **`.vtt`** transcripts — automatically, with no coding required.
-
-Powered by OpenAI's [Whisper `large-v2`](https://github.com/openai/whisper) model, one of the most accurate open-source speech recognition systems available today.
+A collection of Google Colab notebooks for AI-powered audio transcription and subtitle video production. No coding required — open a notebook, upload your files, and run the cell.
 
 ---
 
-## 📋 Contents
+## 📓 Notebooks
 
-- [What This Does](#-what-this-does)
-- [Beginner Tutorial — No coding needed](#-beginner-tutorial--no-coding-needed)
-- [Programmer Tutorial — Technical deep dive](#-programmer-tutorial--technical-deep-dive)
-- [Output Formats](#-output-formats)
-- [Troubleshooting](#-troubleshooting)
+### 1. Whisper Bulk Transcriber
 
----
+[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/lilhawkeye2002-ux/Whisper_Notebooks/blob/main/Whisper_Bulk_Transcriber.ipynb)
 
-## ✨ What This Does
+Transcribe any number of audio or video files into `.txt`, `.srt`, and `.vtt` using OpenAI Whisper `large-v2`. Drop your files in a folder and run one cell.
 
 | Feature | Detail |
 |---|---|
-| 🎧 **Audio transcription** | `.mp3` `.wav` `.m4a` `.flac` `.aac` `.ogg` `.wma` `.opus` `.aiff` `.amr` `.au` |
-| 🎬 **Video transcription** | `.mp4` `.mov` `.avi` `.mkv` `.webm` — audio is extracted automatically |
-| 📝 **Output formats** | Plain text `.txt`, subtitles `.srt`, web captions `.vtt` |
-| 📦 **Bulk processing** | Transcribes an entire folder of files in one run |
-| 🆓 **Completely free** | Runs on Google Colab's free T4 GPU |
-| 🌏 **Multilingual** | Auto-detects language — tested with English, Japanese, and more |
-
-### How Whisper Works
-
-Whisper listens to audio and uses a deep learning model trained on 680,000 hours of multilingual audio to produce highly accurate transcriptions — even with accents, background noise, or technical vocabulary.
-
-![Whisper architecture diagram](https://raw.githubusercontent.com/openai/whisper/main/approach.png)
-
-> *Whisper processes audio in 30-second chunks through an encoder-decoder Transformer. The `large-v2` model used here is the most accurate variant in the original release.*
+| 🎧 Audio formats | `.mp3` `.wav` `.m4a` `.flac` `.aac` `.ogg` `.wma` `.opus` `.aiff` `.amr` `.au` |
+| 🎬 Video formats | `.mp4` `.mov` `.avi` `.mkv` `.webm` — audio extracted automatically |
+| 📝 Output formats | `.txt` plain text · `.srt` subtitles · `.vtt` web captions |
+| 📦 Bulk processing | Entire folder in one run |
+| 🌏 Language | Auto-detects language — tested with English, Japanese, and more |
+| 🆓 Cost | Free — runs on Colab's T4 GPU |
 
 ---
 
-## 🟢 Beginner Tutorial — No coding needed
+### 2. Whisper Bulk Transcriber — Alt Timestamp Method
 
-> **You don't need to know Python.** Just follow these steps — the notebook does everything for you.
+[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/lilhawkeye2002-ux/Whisper_Notebooks/blob/main/Whisper_Bulk_Transcriber_AltTimestampMethod.ipynb)
+
+Same bulk transcription as above, but uses **DTW-forced alignment** to embed millisecond-accurate timestamps on every output line — more precise than Whisper's built-in token predictions.
+
+| Feature | Detail |
+|---|---|
+| ⏱️ Timestamp accuracy | Word-boundary aligned via DTW (vs. ±20–60 ms token prediction) |
+| 📝 `.txt` format | `[HH:MM:SS.mmm --> HH:MM:SS.mmm] spoken text` per line |
+| ⚡ Performance flags | 5 optional tuning flags (see below) |
+| 🔁 Safe to re-run | Model reused if already loaded in session |
+
+**Performance tuning flags:**
+
+| Flag | Typical gain | What it does |
+|---|---|---|
+| `PRECONVERT_AUDIO` | 10–30% | Pre-converts files to 16 kHz mono WAV before transcription |
+| `CUDNN_BENCHMARK` | varies | Auto-selects fastest CUDA convolution kernels |
+| `USE_INFERENCE_MODE` | 3–10% | Skips autograd bookkeeping during inference |
+| `FAST_DECODE` | up to 2× | Greedy decoding (best for clean audio) |
+| `TORCH_COMPILE` | 5–15% | Experimental TorchDynamo compilation |
 
 ---
+
+### 3. Whisper Bulk Transcriber — Alt Timestamp Method (FasterWhisper)
+
+[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/lilhawkeye2002-ux/Whisper_Notebooks/blob/main/Whisper_Bulk_Transcriber_AltTimestampMethod_FasterWhisper.ipynb)
+
+The fastest transcription option. Uses the **faster-whisper CTranslate2 backend** — 2–4× faster than standard Whisper — with the same DTW word-aligned timestamps.
+
+| Feature | Detail |
+|---|---|
+| 🚀 Speed | 2–4× faster than standard Whisper on T4 GPU |
+| ⏱️ Timestamps | CTranslate2 forced alignment, word-boundary accurate |
+| 💾 VRAM | `float16` ~3–4 GB · `int8_float16` ~30% less · `int8` for CPU |
+| 🔧 `COMPUTE_TYPE` | `auto` selects optimal precision per hardware |
+
+**Precision modes:**
+
+| Mode | Hardware | VRAM | Quality |
+|---|---|---|---|
+| `float16` | GPU | ~3–4 GB | Full |
+| `int8_float16` | GPU | ~30% less | Near-identical |
+| `int8` | CPU | Low | Slight reduction |
+| `auto` | Any | — | Auto-selected |
+
+---
+
+### 4. Cover Video Subtitle Burner — Batch Mode
+
+[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/lilhawkeye2002-ux/Whisper_Notebooks/blob/main/Cover_Video_Subtitle_Burner.ipynb)
+
+Combine a still cover image with audio files and SRT subtitles into `.mp4` videos — subtitles burned directly into the frame. Processes multiple audio/SRT pairs in one run.
+
+| Feature | Detail |
+|---|---|
+| 🖼️ Input — image | `.png` `.jpg` `.jpeg` `.webp` — one cover used for all videos |
+| 🎧 Input — audio | `.mp3` `.wav` `.m4a` `.aac` `.flac` `.ogg` `.opus` `.wma` |
+| 📄 Input — subtitles | `.srt` — one per audio file, matched by filename |
+| 🎬 Output | H.264 `.mp4` · AAC stereo audio · burned subtitles |
+| 📦 Batch mode | N audio + N SRT → N MP4s in one run |
+| ☁️ Google Drive | Optional: mount Drive to export finished videos |
+| 🎨 Subtitle style | Font size, color, outline, shadow, position — adjustable via form sliders |
+| 🔤 CJK support | Auto-selects Noto Sans CJK JP for Japanese/Chinese/Korean subtitles |
+| ⚡ GPU encode | NVENC hardware acceleration on T4 (auto-detected, falls back to libx264) |
+
+**File naming for batch pairing:**
+
+| Audio file | Matching SRT |
+|---|---|
+| `Track1.wav` | `Track1.srt` or `Track1_EN.srt` |
+| `Track2.mp3` | `Track2.srt` or `Track2_JA.srt` |
+
+The cell reports any audio files with no SRT match and skips them gracefully.
+
+---
+
+## ✨ Feature Matrix
+
+| | Bulk Transcriber | Alt Timestamp | FasterWhisper | Cover Video Burner |
+|---|:---:|:---:|:---:|:---:|
+| Audio transcription | ✅ | ✅ | ✅ | — |
+| Video audio extraction | ✅ | ✅ | ✅ | — |
+| `.txt` output | ✅ | ✅ | ✅ | — |
+| `.srt` output | ✅ | ✅ | ✅ | — |
+| `.vtt` output | ✅ | ✅ | ✅ | — |
+| DTW-aligned timestamps | — | ✅ | ✅ | — |
+| 2–4× faster encoding | — | — | ✅ | — |
+| MP4 video creation | — | — | — | ✅ |
+| Burned-in subtitles | — | — | — | ✅ |
+| CJK font auto-select | — | — | — | ✅ |
+| GPU acceleration | ✅ | ✅ | ✅ | ✅ |
+| Google Drive export | — | — | — | ✅ |
+| Batch processing | ✅ | ✅ | ✅ | ✅ |
+| Free on Colab | ✅ | ✅ | ✅ | ✅ |
+
+---
+
+## 🟢 Quick Start — Whisper Bulk Transcriber
+
+> No coding required. Follow these steps.
 
 ### Before you start
 
-You need a free Google account. That's it.
+You need a free Google account. Click the badge below to open the notebook:
 
-Click the button below to open the notebook:
-
-[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/lilhawkeye2002-ux/notebooks/blob/main/Whisper_Bulk_Transcriber.ipynb)
+[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/lilhawkeye2002-ux/Whisper_Notebooks/blob/main/Whisper_Bulk_Transcriber.ipynb)
 
 ---
 
 ### Step 1 — Enable a free GPU
 
-Transcription is *much* faster with a GPU. Do this first:
+Transcription is much faster with a GPU:
 
-1. In the menu bar at the top, click **Runtime**
-2. Click **Change runtime type**
-3. Under **Hardware accelerator**, select **T4 GPU**
-4. Click **Save**
+1. **Runtime** → **Change runtime type**
+2. Set **Hardware accelerator** to **T4 GPU**
+3. Click **Save**
 
-> 💡 Google gives every account free access to a T4 GPU. It costs nothing.
+> Google gives every account free T4 GPU access. It costs nothing.
 
 ---
 
-### Step 2 — Run the cell for the first time
+### Step 2 — Run the cell (first time)
 
-You'll see one large code cell in the notebook. Click the **▶ play button** on its left side (or click inside it and press `Shift + Enter`).
-
-The cell will:
-- Install all required software automatically (takes ~1 minute)
-- Create an upload folder for your files
-- Then stop and print a message like this:
+Click **▶** on the code cell. It will install dependencies and print:
 
 ```
 Directory created: '/content/bulk_process_audios_here'
@@ -100,135 +171,81 @@ Upload your audio/video files there, then run this cell again.
 
 ### Step 3 — Upload your files
 
-1. Look at the **left sidebar** and click the **folder icon** 📁 — this opens the Files panel
-2. In the file tree, find and click the folder **`bulk_process_audios_here`**
-3. **Drag and drop** your audio or video files from your computer into that folder
+1. Open the **Files panel** (📁 left sidebar)
+2. Navigate into `bulk_process_audios_here`
+3. Drag and drop your audio or video files
 
 ```
 content/
-└── bulk_process_audios_here/    ← drop your files here
+└── bulk_process_audios_here/
       Interview.mp3
       Meeting_Recording.mp4
       Podcast_Ep42.wav
 ```
 
-> ✅ You can upload as many files as you like at once — they'll all be processed in order.
-
-> 🎬 Video files work too — the audio is extracted automatically before transcription.
-
 ---
 
 ### Step 4 — Run the cell again
 
-Click **▶** one more time. The notebook will find your files and start transcribing.
-
-**What you'll see:**
+Click **▶** again. Transcription runs live:
 
 ```
-Found 3 file(s) to transcribe.
-3 file(s) passed validation.
-Loading 'large-v2' model on cuda...
-Model 'large-v2' loaded on cuda.
-
 [1/3] Processing: Interview.mp3
 [00:00.000 --> 00:04.820]  Welcome everyone, today we're going to discuss...
-[00:04.820 --> 00:09.110]  the topic of renewable energy and why it matters...
-  Saved: Interview.txt
-  Saved: Interview.srt
-  Saved: Interview.vtt
-
-[2/3] Processing: Meeting_Recording.mp4
-  Video file detected — extracting audio track via ffmpeg...
-  Audio extracted successfully.
-[00:00.000 --> 00:03.500]  Okay so let's get started with the agenda...
+  Saved: Interview.txt  Interview.srt  Interview.vtt
 ```
-
-The transcript appears **live on screen** as each line is recognised — you can watch it happen in real time.
 
 ---
 
 ### Step 5 — Download your results
 
-When all files are done, a zip file is created automatically:
-
 ```
-✓ Zipped 9 files → /content/all_transcribed_files.zip (1.24 MB)
-REMINDER: Download your zip before the Colab session ends.
+✓ Zipped 9 files → /content/all_transcribed_files.zip
 ```
 
-**To download:**
+Right-click `all_transcribed_files.zip` in the Files panel → **Download**.
 
-1. In the **Files panel** on the left, find `all_transcribed_files.zip` under `/content/`
-2. **Right-click** it → click **Download**
-
-> ⚠️ **Download before you close the tab.** Colab erases all files when the session ends — the zip cannot be recovered afterward.
+> ⚠️ Download before closing the tab — Colab erases all files when the session ends.
 
 ---
 
-### Final summary
+## 🔵 Technical Deep Dive
 
-At the very end, the notebook prints a report:
-
-```
-====================================================
-TRANSCRIPTION SUMMARY
-  Total files :  3
-  Succeeded   :  3
-  Failed      :  0
-====================================================
-```
-
-If any file failed, it will be listed here with the reason.
-
----
-
-## 🔵 Programmer Tutorial — Technical deep dive
-
-This section covers the notebook's internal architecture, configuration knobs, and integration patterns for developers who want to understand or extend it.
-
----
-
-### Architecture overview
+### Architecture — Whisper Bulk Transcriber
 
 ```mermaid
 flowchart TD
-    A[Cell executed] --> B{Libraries\nimported?}
-    B -- No --> C[pip install\nopenai-whisper openai\npydub ffmpeg-python]
+    A[Cell executed] --> B{Libraries imported?}
+    B -- No --> C[pip install openai-whisper pydub ffmpeg-python]
     C --> D[Re-import]
     B -- Yes --> E[ffmpeg binary check]
     D --> E
-    E --> F{bulk dir\nexists?}
-    F -- No --> G[mkdir\nbulk_process_audios_here\n→ EXIT with prompt]
-    F -- Yes --> H{Files found\nin dir?}
-    H -- No --> I[EXIT with\nupload prompt]
-    H -- Yes --> J[Per-file validation\nreadable + size > 0]
-    J --> K{GPU\navailable?}
-    K -- No --> L[ffprobe total duration\nEstimate CPU time\nPrompt to confirm]
-    K -- Yes --> M[Load large-v2\non CUDA]
+    E --> F{bulk dir exists?}
+    F -- No --> G[mkdir → EXIT with prompt]
+    F -- Yes --> H{Files found?}
+    H -- No --> I[EXIT with upload prompt]
+    H -- Yes --> J[Per-file validation]
+    J --> K{GPU available?}
+    K -- No --> L[Estimate CPU time → confirm]
+    K -- Yes --> M[Load large-v2 on CUDA]
     L --> M
     M --> N[Transcription loop]
-    N --> O{Video\nextension?}
-    O -- Yes --> P[ffmpeg extract\n16kHz mono WAV\nto tempfile]
+    N --> O{Video extension?}
+    O -- Yes --> P[ffmpeg extract 16kHz mono WAV]
     O -- No --> Q[Use file directly]
     P --> Q
-    Q --> R[sys.stdout → LiveFileWriter\nwhisper.transcribe]
-    R --> S[Restore stdout\nClose file handle\nDelete temp WAV]
-    S --> T[get_writer srt + vtt]
-    T --> U{More\nfiles?}
-    U -- Yes --> N
-    U -- No --> V[Zip all .txt .srt .vtt\n→ all_transcribed_files.zip]
+    Q --> R[sys.stdout → LiveFileWriter · whisper.transcribe]
+    R --> S[Restore stdout · write .srt + .vtt]
+    S --> T{More files?}
+    T -- Yes --> N
+    T -- No --> V[Zip all outputs]
     V --> W[Print summary]
 ```
 
----
-
-### Key components
+### Key Components
 
 #### `LiveFileWriter`
-
-A custom `sys.stdout` wrapper that tees Whisper's console output simultaneously to the terminal and a `.txt` file — with a **single persistent file handle** (opened once per file, not once per segment).
-
-Segment detection uses a compiled regex anchored to Whisper's exact verbose output format, preventing false positives when transcribed speech contains ` --> `:
+A custom `sys.stdout` wrapper that tees Whisper's console output to both the terminal and a `.txt` file simultaneously. Segment detection uses a compiled regex anchored to Whisper's exact output format:
 
 ```python
 _WHISPER_SEGMENT_RE = re.compile(
@@ -236,118 +253,32 @@ _WHISPER_SEGMENT_RE = re.compile(
 )
 ```
 
-Only lines matching this pattern are written to `.txt`. Everything else (model loading logs, progress bars) stays console-only.
-
 #### `_extract_audio_from_video()`
-
-Shells out to `ffmpeg` to extract audio as **16 kHz mono PCM WAV** — Whisper's native internal format — which eliminates the re-decode step inside `whisper.load_audio()`:
-
-```
-ffmpeg -y -i input.mp4 -vn -acodec pcm_s16le -ar 16000 -ac 1 /tmp/_whisper_extract_XXXX.wav
-```
-
-The temp file path is stored in `_temp_audio` and unconditionally deleted in the `finally` block — even if transcription raises an exception.
+Extracts audio as 16 kHz mono PCM WAV — Whisper's native format — via ffmpeg. The temp file is always deleted in a `finally` block.
 
 #### Unicode normalisation
+Output filenames are NFC-normalised before use (`unicodedata.normalize("NFC", ...)`). Required for files uploaded from macOS which uses NFD decomposition.
 
-Output filenames are NFC-normalised before use:
-
-```python
-output_stem = unicodedata.normalize("NFC", raw_stem)
-```
-
-This matters for files uploaded from **macOS**, which uses NFD decomposition for filenames. Without normalisation, Japanese filenames and others can produce broken zip entries on Linux/Windows extraction.
-
----
-
-### Whisper transcription options
-
-The `_options` dict exposes the full Whisper API surface:
+### Whisper Options Reference
 
 ```python
 _options = {
-    "task": "transcribe",          # or "translate" to force English output
-    "fp16": DEVICE == "cuda",      # half-precision on GPU; auto-disabled on CPU
-    "best_of": 5,                  # candidate samples for non-zero temperature
-    "beam_size": 5,                # beam search width
-    "temperature": (0.0, 0.2, 0.4, 0.6, 0.8, 1.0),  # fallback schedule
-    "condition_on_previous_text": True,  # sliding context window
-    "initial_prompt": None,        # optional string to prime the decoder
-    "language": None,              # None = auto-detect; or e.g. "japanese"
-
-    # Sensitivity tuning — adjusted from Whisper defaults for quieter audio
-    "no_speech_threshold": 0.4,        # default 0.6 — lower = fewer skipped segments
-    "logprob_threshold": -1.5,         # default -1.0 — lower = keep low-confidence
-    "compression_ratio_threshold": 2.2, # default 2.4 — lower = suppress repetitions
+    "task": "transcribe",        # "translate" forces English output
+    "fp16": DEVICE == "cuda",    # half-precision on GPU
+    "best_of": 5,
+    "beam_size": 5,
+    "temperature": (0.0, 0.2, 0.4, 0.6, 0.8, 1.0),
+    "condition_on_previous_text": True,
+    "language": None,            # None = auto-detect; or e.g. "japanese"
+    "no_speech_threshold": 0.4,  # lower than default — recovers quiet speech
+    "logprob_threshold": -1.5,
+    "compression_ratio_threshold": 2.2,
 }
 ```
 
-**Notable tuning decisions:**
-- `no_speech_threshold: 0.4` — the default `0.6` causes Whisper to silently skip quiet or accented speech. Lowering it recovers these segments at the cost of occasionally transcribing near-silence.
-- `temperature` tuple — Whisper uses temperature `0.0` first (pure greedy) and falls back to higher temperatures only when decoding metrics fall below threshold. This gives deterministic output on clear audio while recovering gracefully on poor audio.
-- `condition_on_previous_text: True` — maintains a rolling context window across chunks, improving coherence in long recordings. Set to `False` if you see repeating hallucinations.
+### Performance Reference
 
----
-
-### Error isolation model
-
-Each file runs inside its own `try/except/finally`. A failure in file N does not abort files N+1 through end:
-
-```python
-try:
-    sys.stdout = live_writer
-    result = whisper.transcribe(model, transcribe_path, verbose=True, **_options)
-except RuntimeError as e:
-    # GPU OOM is caught and identified specifically
-    ...
-    failed_files[audio_path] = msg
-except Exception as e:
-    failed_files[audio_path] = str(e)
-finally:
-    sys.stdout = original_stdout   # always restored
-    live_writer.close()            # always closed
-    if _temp_audio:
-        os.unlink(_temp_audio)     # always cleaned up
-```
-
-`failed_files` is a `dict[path, reason]` accumulated across the loop and printed in the final summary.
-
----
-
-### Extending the notebook
-
-**Change the output model** — swap `USE_MODEL` in Phase 0:
-```python
-USE_MODEL = "medium"   # faster, slightly less accurate
-USE_MODEL = "large-v3" # newer model, may need updated openai-whisper
-```
-
-**Force a specific language** — edit `_options`:
-```python
-"language": "japanese"   # skip auto-detection, faster on known-language audio
-```
-
-**Add translation to English** — set the task:
-```python
-"task": "translate"   # outputs English regardless of source language
-```
-
-**Add more output formats** — extend the format loop:
-```python
-for fmt in ("srt", "vtt", "tsv", "json"):
-```
-Note: `txt` is intentionally excluded from this loop — it is already written live by `LiveFileWriter` during transcription.
-
-**Process files from a different directory** — change `BULK_DIR` in Phase 0:
-```python
-BULK_DIR = "/content/drive/MyDrive/my_audio_files"  # Google Drive folder
-```
-
----
-
-### Performance reference
-
-| Hardware | Model | Speed vs real-time |
+| Hardware | Model | Speed vs. real-time |
 |---|---|---|
 | T4 GPU (free Colab) | `large-v2` | ~8–12× faster |
 | A100 GPU (Colab Pro) | `large-v2` | ~30× faster |
@@ -360,23 +291,12 @@ BULK_DIR = "/content/drive/MyDrive/my_audio_files"  # Google Drive folder
 
 ## 📄 Output Formats
 
-For each source file, three outputs are produced in `/content/audio_transcription/`:
-
 | Format | Extension | Use case |
 |---|---|---|
 | Plain text | `.txt` | Editing, reading, search indexing |
 | SubRip subtitles | `.srt` | Video players, Premiere Pro, DaVinci Resolve, HandBrake |
 | Web Video Text | `.vtt` | YouTube captions, HTML5 `<track>`, streaming platforms |
-
-Output filenames always match the source:
-
-```
-Interview.mp3      →   Interview.txt   Interview.srt   Interview.vtt
-Lecture.mp4        →   Lecture.txt     Lecture.srt     Lecture.vtt
-音楽インタビュー.m4a  →  音楽インタビュー.txt  ...
-```
-
-All outputs are collected into `/content/all_transcribed_files.zip` at the end.
+| MP4 video | `.mp4` | Social media, streaming — from Cover Video Subtitle Burner |
 
 ---
 
@@ -384,19 +304,22 @@ All outputs are collected into `/content/all_transcribed_files.zip` at the end.
 
 | Symptom | Cause | Fix |
 |---|---|---|
-| *"No supported audio/video files found"* | Files not in the right folder, or in a subfolder | Move files directly into `/content/bulk_process_audios_here` (not a subfolder inside it) |
-| *"ffmpeg binary not found"* | ffmpeg not installed on the runtime | Add a code cell above with `!apt install -y ffmpeg` and run it before the main cell |
-| Transcription is very slow | No GPU attached | **Runtime → Change runtime type → T4 GPU**, then re-run |
-| *"GPU out of memory"* | `large-v2` needs ~10 GB VRAM; something else used it | **Runtime → Restart session**, then re-run the cell |
-| File shows `[SKIP]` | File is 0 bytes or not readable | Re-upload the file |
-| File shows `[FAIL]` | Corrupt audio, unsupported codec, or ffmpeg decode error | Check the reason printed below `[FAIL]`; try converting to `.mp3` first |
-| Repeated or hallucinated text | Long silence or music being transcribed as speech | Set `"condition_on_previous_text": False` in `_options` and re-run |
-| Session expired before download | Colab idle timeout | Re-run the cell — files are re-transcribed and the zip is recreated |
+| *"No supported audio/video files found"* | Files in wrong folder or subfolder | Move files directly into `bulk_process_audios_here` (not a subfolder) |
+| *"ffmpeg binary not found"* | ffmpeg not on runtime | Add `!apt install -y ffmpeg` in a new cell above and run it first |
+| Transcription very slow | No GPU attached | **Runtime → Change runtime type → T4 GPU**, then re-run |
+| *"GPU out of memory"* | `large-v2` needs ~10 GB VRAM | **Runtime → Restart session**, then re-run |
+| File shows `[SKIP]` | File is 0 bytes or unreadable | Re-upload the file |
+| File shows `[FAIL]` | Corrupt audio or unsupported codec | Try converting to `.mp3` first; check printed reason |
+| Repeated or hallucinated text | Long silence or music | Set `"condition_on_previous_text": False` in `_options` |
+| *"No SRT match found for …"* | Audio and SRT filenames don't match | Rename SRT to match audio stem (e.g. `Track1.wav` → `Track1_EN.srt`) |
+| *"Multiple cover images found"* | More than one image in `/content/input/` | Remove extras — keep exactly one |
+| Drive export not working | Setup cell not run first | Run the Setup cell with **Mount Google Drive** checked, then re-run |
+| Session expired before download | Colab idle timeout | Re-run the cell — files are re-generated |
 
 ---
 
 <div align="center">
 
-Built with [OpenAI Whisper](https://github.com/openai/whisper) · Runs free on [Google Colab](https://colab.research.google.com)
+Built with [OpenAI Whisper](https://github.com/openai/whisper) · [faster-whisper](https://github.com/SYSTRAN/faster-whisper) · [FFmpeg](https://ffmpeg.org) · Runs free on [Google Colab](https://colab.research.google.com)
 
 </div>
