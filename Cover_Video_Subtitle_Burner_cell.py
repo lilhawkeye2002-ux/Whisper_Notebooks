@@ -12,6 +12,7 @@
 
 import os
 import sys
+import re
 
 INPUT_DIR = "/content/input"
 TMP_SRT   = "/tmp/sanitized_subtitles.srt"
@@ -21,16 +22,123 @@ IMAGE_EXTS = {'.png', '.jpg', '.jpeg', '.webp'}
 AUDIO_EXTS = {'.mp3', '.wav', '.m4a', '.aac', '.flac', '.ogg', '.opus', '.wma'}
 SRT_EXTS   = {'.srt'}
 
+# ── Security Validation Functions ────────────────────────────────────────────
+
+def validate_font_color(color_str):
+    """Validate font color against whitelist."""
+    color_str = color_str.strip().lower()
+    if not re.match(r'^[a-z]+$', color_str):
+        raise ValueError(f"Invalid color format: {color_str}")
+    valid_colors = {"white", "yellow", "cyan", "black", "green"}
+    if color_str not in valid_colors:
+        raise ValueError(f"Unsupported color: {color_str}. Must be one of: {', '.join(valid_colors)}")
+    return color_str
+
+def validate_resolution(res_str):
+    """Validate and parse resolution string in WxH format."""
+    VALID_RESOLUTIONS = {
+        "Original": None,
+        "1920x1080": (1920, 1080),
+        "1280x720": (1280, 720),
+        "854x480": (854, 480),
+    }
+
+    if res_str in VALID_RESOLUTIONS:
+        return VALID_RESOLUTIONS[res_str]
+
+    if not re.match(r'^\d{2,5}x\d{2,5}$', res_str):
+        raise ValueError(f"Invalid resolution format: {res_str}")
+
+    parts = res_str.split("x")
+    if len(parts) != 2:
+        raise ValueError(f"Resolution must be WxH format: {res_str}")
+
+    try:
+        w, h = int(parts[0]), int(parts[1])
+    except ValueError:
+        raise ValueError(f"Resolution dimensions must be integers: {res_str}")
+
+    if not (64 <= w <= 7680):
+        raise ValueError(f"Width must be 64-7680: {w}")
+    if not (64 <= h <= 4320):
+        raise ValueError(f"Height must be 64-4320: {h}")
+
+    return (w, h)
+
+def validate_crf(crf_value):
+    """Validate CRF (Constant Rate Factor) value."""
+    try:
+        crf = int(crf_value)
+    except (ValueError, TypeError):
+        raise ValueError(f"CRF must be an integer: {crf_value}")
+
+    if not (18 <= crf <= 35):
+        raise ValueError(f"CRF must be 18-35 (got {crf})")
+
+    return crf
+
+def escape_ffmpeg_path(path):
+    """Escape path for use in ffmpeg filter string."""
+    return path.replace("'", "'\\''")
+
+def validate_tmp_path(path):
+    """Validate temporary file path for safety."""
+    if not os.path.isabs(path):
+        raise ValueError(f"Path must be absolute: {path}")
+
+    normalized = os.path.normpath(path)
+    if not normalized.startswith("/tmp/"):
+        raise ValueError(f"Path must be in /tmp: {path}")
+
+    if ".." in path:
+        raise ValueError(f"Path contains traversal: {path}")
+
+    if not re.match(r'^[a-zA-Z0-9/_.-]+$', path):
+        raise ValueError(f"Path contains unsafe characters: {path}")
+
+    return normalized
+
+def list_files_safely(directory):
+    """List files in directory safely, rejecting symlinks and special files."""
+    if not os.path.isdir(directory):
+        return []
+
+    safe_files = []
+
+    try:
+        entries = os.listdir(directory)
+    except (PermissionError, OSError) as e:
+        print(f"[WARN] Cannot read directory {directory}: {e}")
+        return []
+
+    for entry in entries:
+        full_path = os.path.join(directory, entry)
+
+        if os.path.islink(full_path):
+            print(f"[WARN] Skipping symlink: {entry}")
+            continue
+
+        if not os.path.isfile(full_path):
+            continue
+
+        real_path = os.path.realpath(full_path)
+        if not real_path.startswith(os.path.realpath(directory) + os.sep):
+            print(f"[WARN] Path escapes input directory: {entry}")
+            continue
+
+        safe_files.append(full_path)
+
+    return safe_files
+
 # ── Phase 1: Directory Check + File Detection ─────────────────────────────────
 # Exactly one cover image required.
 # Multiple audio and SRT files are accepted — each audio is matched to its SRT.
 
 os.makedirs(INPUT_DIR, exist_ok=True)
 
-_all_files = [
-    f for f in os.listdir(INPUT_DIR)
-    if os.path.isfile(os.path.join(INPUT_DIR, f))
-]
+# Use safe file listing to prevent symlink attacks
+_safe_files = list_files_safely(INPUT_DIR)
+_all_files = [os.path.basename(f) for f in _safe_files]
 
 img_files   = sorted([f for f in _all_files if os.path.splitext(f)[1].lower() in IMAGE_EXTS])
 audio_files = sorted([f for f in _all_files if os.path.splitext(f)[1].lower() in AUDIO_EXTS])
@@ -360,10 +468,33 @@ _TIMING_PERIOD = re.compile(
 
 
 def _srt_to_secs(t):
-    t = t.strip().replace(",", ".")
-    h, m, rest = t.split(":")
-    s, ms = rest.split(".")
-    return int(h) * 3600 + int(m) * 60 + int(s) + int(ms) / 1000.0
+    """Validate and parse SRT timestamp to seconds with bounds checking."""
+    pattern = r'^(\d{2}):(\d{2}):(\d{2})[,.](\d{3})$'
+    match = re.match(pattern, t.strip())
+
+    if not match:
+        raise ValueError(f"Invalid SRT timestamp format: {t}")
+
+    h, m, s, ms = match.groups()
+    h, m, s, ms = int(h), int(m), int(s), int(ms)
+
+    # Validate ranges
+    if not (0 <= h <= 99):
+        raise ValueError(f"Hours must be 0-99: {h}")
+    if not (0 <= m <= 59):
+        raise ValueError(f"Minutes must be 0-59: {m}")
+    if not (0 <= s <= 59):
+        raise ValueError(f"Seconds must be 0-59: {s}")
+    if not (0 <= ms <= 999):
+        raise ValueError(f"Milliseconds must be 0-999: {ms}")
+
+    total_seconds = h * 3600 + m * 60 + s + ms / 1000.0
+
+    # Enforce reasonable maximum (24 hours)
+    if total_seconds > 86400:
+        raise ValueError(f"Timestamp exceeds 24 hours: {total_seconds}s")
+
+    return total_seconds
 
 
 def _clean_line(line):
@@ -443,6 +574,13 @@ export_to_google_drive = False  # @param {type:"boolean"}
 # @markdown Copy each finished MP4 to your Google Drive `My Drive` folder.
 # @markdown Requires the **Setup cell** to be run first with **Mount Google Drive** checked.
 
+# Validate user parameters before use
+try:
+    font_color = validate_font_color(font_color)
+    video_crf = validate_crf(video_crf)
+except ValueError as e:
+    sys.exit(f"[ERROR] Parameter validation failed: {e}")
+
 # ASS color format: &HAABBGGRR& — AA=00 means fully opaque
 _COLOR_MAP = {
     "white":  "&H00FFFFFF&",
@@ -458,7 +596,14 @@ _alignment      = 2 if position == "bottom" else 8
 if output_resolution == "Original":
     _out_w, _out_h = img_width, img_height
 else:
-    _out_w, _out_h = map(int, output_resolution.split("x"))
+    try:
+        parsed = validate_resolution(output_resolution)
+        if parsed is None:
+            _out_w, _out_h = img_width, img_height
+        else:
+            _out_w, _out_h = parsed
+    except ValueError as e:
+        sys.exit(f"[ERROR] Invalid resolution: {e}")
 
 _out_w = _out_w if _out_w % 2 == 0 else _out_w - 1
 _out_h = _out_h if _out_h % 2 == 0 else _out_h - 1
@@ -495,24 +640,37 @@ def _safe_stem(path):
 _used_output_paths = set()
 
 
-def _unique_output_path(srt_path):
+def _unique_output_path(srt_path, max_attempts=10000):
     """Return a /content/<stem>.mp4 path that hasn't been used yet."""
     stem = _safe_stem(srt_path)
     base = f"/content/{stem}.mp4"
     if base not in _used_output_paths and not os.path.exists(base):
+        _used_output_paths.add(base)
         return base
-    i = 2
-    while True:
+
+    for i in range(2, max_attempts + 2):
         candidate = f"/content/{stem}_{i}.mp4"
         if candidate not in _used_output_paths and not os.path.exists(candidate):
+            _used_output_paths.add(candidate)
             return candidate
-        i += 1
+
+    raise RuntimeError(
+        f"Cannot generate unique output path for '{stem}' "
+        f"after {max_attempts} attempts. Check /content/ directory."
+    )
 
 
 # ── ffmpeg command builder + runner ──────────────────────────────────────────
 
 def _build_cmd(encoder, audio_path, output_path, video_duration, font_name):
     """Return the complete ffmpeg command list for one encode."""
+    # Validate and escape TMP_SRT path to prevent injection
+    try:
+        safe_srt_path = validate_tmp_path(TMP_SRT)
+        escaped_srt_path = escape_ffmpeg_path(safe_srt_path)
+    except ValueError as e:
+        raise RuntimeError(f"Invalid SRT path: {e}")
+
     _fs = (
         f"PlayResX={_out_w},"
         f"PlayResY={_out_h},"
@@ -530,7 +688,7 @@ def _build_cmd(encoder, audio_path, output_path, video_duration, font_name):
         f"MarginR={margin_lr}"
     )
     _subtitle_filter = (
-        f"subtitles='{TMP_SRT}'"
+        f"subtitles='{escaped_srt_path}'"
         f":charenc=UTF-8"
         f":force_style='{_fs}'"
     )
