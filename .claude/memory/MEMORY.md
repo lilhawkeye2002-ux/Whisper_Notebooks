@@ -1,0 +1,4 @@
+- [User profile](user_profile.md) — Power user, Whisper/subtitle notebook dev, GitHub-first workflow, approval-gate preference
+- [Whisper Notebooks project](project_whisper.md) — Project context, architecture, repo URL, active features
+- [Feedback: always push to GitHub](feedback_always_push.md) — Push every change immediately; never leave uncommitted work; token stored here
+- [Feedback: no changes without approval](feedback_no_changes_without_approval.md) — Always get explicit approval before modifying any file
